@@ -147,12 +147,75 @@ class TestAlgorithms:
             with pytest.raises(InvalidKeyError, match="looks like a JWK"):
                 algo.prepare_key(keyfile.read())
 
+    @pytest.mark.parametrize(
+        "encoding",
+        [
+            "utf-8",
+            "utf-8-sig",
+            "utf-16",
+            "utf-16-le",
+            "utf-16-be",
+            "utf-32",
+            "utf-32-le",
+            "utf-32-be",
+        ],
+    )
+    def test_hmac_prepare_key_rejects_bom_prefixed_jwk_json(
+        self, encoding: str
+    ) -> None:
+        algo = HMACAlgorithm(HMACAlgorithm.SHA256)
+
+        with open(key_path("jwk_rsa_pub.json"), encoding="utf-8") as keyfile:
+            with pytest.raises(InvalidKeyError, match="looks like a JWK"):
+                algo.prepare_key((" \n" + keyfile.read()).encode(encoding))
+
     def test_hmac_prepare_key_accepts_json_without_kty(self) -> None:
         # JSON that doesn't look like a JWK (no "kty") should not be misclassified.
         algo = HMACAlgorithm(HMACAlgorithm.SHA256)
 
         key = algo.prepare_key('{"this": "is just a json-shaped secret"}')
         assert key == b'{"this": "is just a json-shaped secret"}'
+
+    def test_hmac_prepare_key_accepts_deep_non_jwk_bytes(self) -> None:
+        algo = HMACAlgorithm(HMACAlgorithm.SHA256)
+        key = b"[" * 1100 + b"0" + b"]" * 1100
+
+        assert algo.prepare_key(key) == key
+
+    def test_hmac_prepare_key_rejects_deep_jwk_object(self) -> None:
+        algo = HMACAlgorithm(HMACAlgorithm.SHA256)
+        key = b'{"kty":"RSA","nested":' + b"[" * 1100 + b"0" + b"]" * 1100 + b"}"
+
+        with pytest.raises(InvalidKeyError, match="looks like a JWK"):
+            algo.prepare_key(key)
+
+    @pytest.mark.parametrize(
+        "encoding",
+        [
+            "utf-8",
+            "utf-8-sig",
+            "utf-16",
+            "utf-16-le",
+            "utf-16-be",
+            "utf-32",
+            "utf-32-le",
+            "utf-32-be",
+        ],
+    )
+    def test_hmac_prepare_key_rejects_deep_jwk_with_surrogate(
+        self, encoding: str
+    ) -> None:
+        algo = HMACAlgorithm(HMACAlgorithm.SHA256)
+        key = (
+            '{"kty":"RSA","extra":"\ud800","nested":'
+            + "[" * 1100
+            + "0"
+            + "]" * 1100
+            + "}"
+        ).encode(encoding, errors="surrogatepass")
+
+        with pytest.raises(InvalidKeyError, match="looks like a JWK"):
+            algo.prepare_key(key)
 
     @crypto_required
     def test_rsa_should_parse_pem_public_key(self) -> None:
