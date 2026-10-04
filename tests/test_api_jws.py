@@ -1294,3 +1294,38 @@ class TestJWS:
 
         with pytest.raises(InvalidTokenError, match="Unsupported critical extension"):
             jws.get_unverified_header(token)
+
+    def test_pyjwk_rejects_empty_hmac_key(self) -> None:
+        import jwt
+
+        with pytest.raises(jwt.InvalidKeyError, match="must not be empty"):
+            jwt.PyJWK.from_dict(
+                {"kty": "oct", "k": "", "kid": "active", "alg": "HS256"}
+            )
+
+    def test_decode_rejects_empty_hmac_pyjwk(self) -> None:
+        import base64
+        import hashlib
+        import hmac
+        import jwt
+
+        jwk = jwt.PyJWK.from_dict(
+            {
+                "kty": "oct",
+                "k": base64url_encode(b"a" * 32).decode(),
+                "kid": "active",
+                "alg": "HS256",
+            }
+        )
+        # A PyJWK whose key material ends up empty (bypassing from_jwk) must
+        # still be rejected at verification time instead of accepting an
+        # attacker-forged HMAC computed with an empty secret.
+        jwk.key = b""
+        signing_input = b"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhdHRhY2tlciJ9"
+        signature = hmac.new(b"", signing_input, hashlib.sha256).digest()
+        token = (
+            signing_input + b"." + base64.urlsafe_b64encode(signature).rstrip(b"=")
+        ).decode()
+
+        with pytest.raises(jwt.InvalidKeyError, match="must not be empty"):
+            jwt.decode(token, jwk, algorithms=["HS256"])

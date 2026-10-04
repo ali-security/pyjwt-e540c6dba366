@@ -241,6 +241,20 @@ class TestPyJWKSet:
         assert len(jwk_set.keys) == 1
         assert jwk_set.keys[0].key_type == "RSA"
 
+    def test_should_skip_empty_hmac_key_and_load_remaining_keys(self) -> None:
+        empty_key = {"kty": "oct", "k": "", "kid": "empty", "alg": "HS256"}
+
+        with open(key_path("jwk_hmac.json")) as keyfile:
+            valid_key = json.loads(keyfile.read())
+
+        jwk_set = PyJWKSet.from_dict({"keys": [empty_key, valid_key]})
+
+        assert len(jwk_set.keys) == 1
+        assert jwk_set.keys[0].key_id == valid_key["kid"]
+
+        with pytest.raises(KeyError):
+            _ = jwk_set["empty"]
+
     @crypto_required
     def test_should_load_keys_from_jwk_data_dict(self) -> None:
         algo = RSAAlgorithm(RSAAlgorithm.SHA256)
